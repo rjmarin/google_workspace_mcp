@@ -131,9 +131,14 @@ def get_registered_tools(server) -> Dict[str, Any]:
     """
     tools = {}
 
-    if hasattr(server, "_tool_manager") and hasattr(server._tool_manager, "_tools"):
-        tool_registry = server._tool_manager._tools
-        for name, tool in tool_registry.items():
+    # FastMCP v3: access tools via local_provider._components
+    lp = getattr(server, "local_provider", None)
+    if lp is not None:
+        components = getattr(lp, "_components", {})
+        for key, tool in components.items():
+            if not key.startswith("tool:"):
+                continue
+            name = key.split(":", 1)[1].rsplit("@", 1)[0]
             tools[name] = {
                 "name": name,
                 "description": getattr(tool, "description", None)
