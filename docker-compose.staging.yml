@@ -1,0 +1,37 @@
+# =============================================================
+# google_workspace_mcp — STAGING
+# Cambios respecto al docker-compose.yml original:
+#   1. El puerto 8000 NO se expone al host (solo red interna)
+#   2. Se agrega la red compartida "extend-network"
+#   3. Container name explícito para que nginx-proxy lo resuelva
+# Usar con: docker compose -f docker-compose.staging.yml up -d
+# =============================================================
+
+services:
+  gws_mcp:
+    build: .
+    container_name: gws_mcp
+    # CAMBIO: Sin exposición de puerto al host
+    expose:
+      - "8000"
+    environment:
+      - GOOGLE_MCP_CREDENTIALS_DIR=/app/store_creds
+      # IMPORTANTE: El OAuth callback debe apuntar al dominio público
+      # Actualizar en Google Cloud Console:
+      # Authorized redirect URIs: https://mcp.preludio.extend.cl/oauth/callback
+    volumes:
+      - ./client_secret.json:/app/client_secret.json:ro
+      - store_creds:/app/store_creds:rw
+    env_file:
+      - .env
+    networks:
+      - extend-network
+    restart: always
+
+volumes:
+  store_creds:
+
+networks:
+  # NUEVO: Red compartida con nginx-proxy y LibreChat
+  extend-network:
+    external: true
