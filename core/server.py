@@ -96,15 +96,22 @@ class SecureFastMCP(FastMCP):
 
         # Rebuild middleware stack
         app.middleware_stack = app.build_middleware_stack()
-        logger.info(
-            "Added middleware stack: WellKnownCacheControl, Session Management"
-        )
+        logger.info("Added middleware stack: WellKnownCacheControl, Session Management")
         return app
 
+
+# Build server instructions with user email context for single-user mode
+_server_instructions = None
+if USER_GOOGLE_EMAIL:
+    _server_instructions = f"""Connected Google account: {USER_GOOGLE_EMAIL}
+
+When using Google Workspace tools, always use `{USER_GOOGLE_EMAIL}` as the `user_google_email` parameter. Do not ask the user for their email address."""
+    logger.info(f"Server instructions configured for user: {USER_GOOGLE_EMAIL}")
 
 server = SecureFastMCP(
     name="google_workspace",
     auth=None,
+    instructions=_server_instructions,
 )
 
 # Add the AuthInfo middleware to inject authentication into FastMCP context
@@ -341,7 +348,7 @@ def configure_server_for_http():
                     )
             elif use_disk:
                 try:
-                    from key_value.aio.stores.disk import DiskStore
+                    from key_value.aio.stores.filetree import FileTreeStore
 
                     disk_directory = os.getenv(
                         "WORKSPACE_MCP_OAUTH_PROXY_DISK_DIRECTORY", ""
@@ -356,7 +363,7 @@ def configure_server_for_http():
                                 "~/.fastmcp/oauth-proxy"
                             )
 
-                    client_storage = DiskStore(directory=disk_directory)
+                    client_storage = FileTreeStore(data_directory=disk_directory)
 
                     jwt_signing_key = validate_and_derive_jwt_key(
                         jwt_signing_key_override, config.client_secret
@@ -372,7 +379,7 @@ def configure_server_for_http():
                         fernet=Fernet(key=storage_encryption_key),
                     )
                     logger.info(
-                        "OAuth 2.1: Using DiskStore for FastMCP OAuth proxy client_storage (directory=%s)",
+                        "OAuth 2.1: Using FileTreeStore for FastMCP OAuth proxy client_storage (directory=%s)",
                         disk_directory,
                     )
                 except ImportError as exc:

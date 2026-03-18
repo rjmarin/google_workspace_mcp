@@ -113,6 +113,7 @@ def build_paragraph_style(
     indent_end: float = None,
     space_above: float = None,
     space_below: float = None,
+    named_style_type: str = None,
 ) -> tuple[Dict[str, Any], list[str]]:
     """
     Build paragraph style object for Google Docs API requests.
@@ -126,6 +127,8 @@ def build_paragraph_style(
         indent_end: Right/end indent in points
         space_above: Space above paragraph in points
         space_below: Space below paragraph in points
+        named_style_type: Direct named style (TITLE, SUBTITLE, HEADING_1..6, NORMAL_TEXT).
+                          Takes precedence over heading_level when both are provided.
 
     Returns:
         Tuple of (paragraph_style_dict, list_of_field_names)
@@ -133,7 +136,26 @@ def build_paragraph_style(
     paragraph_style = {}
     fields = []
 
-    if heading_level is not None:
+    if named_style_type is not None:
+        valid_styles = [
+            "NORMAL_TEXT",
+            "TITLE",
+            "SUBTITLE",
+            "HEADING_1",
+            "HEADING_2",
+            "HEADING_3",
+            "HEADING_4",
+            "HEADING_5",
+            "HEADING_6",
+        ]
+        if named_style_type not in valid_styles:
+            raise ValueError(
+                f"Invalid named_style_type '{named_style_type}'. "
+                f"Must be one of: {', '.join(valid_styles)}"
+            )
+        paragraph_style["namedStyleType"] = named_style_type
+        fields.append("namedStyleType")
+    elif heading_level is not None:
         if heading_level < 0 or heading_level > 6:
             raise ValueError("heading_level must be between 0 (normal text) and 6")
         if heading_level == 0:
@@ -184,22 +206,28 @@ def build_paragraph_style(
     return paragraph_style, fields
 
 
-def create_insert_text_request(index: int, text: str) -> Dict[str, Any]:
+def create_insert_text_request(
+    index: int, text: str, tab_id: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Create an insertText request for Google Docs API.
 
     Args:
         index: Position to insert text
         text: Text to insert
+        tab_id: Optional ID of the tab to target
 
     Returns:
         Dictionary representing the insertText request
     """
-    return {"insertText": {"location": {"index": index}, "text": text}}
+    location = {"index": index}
+    if tab_id:
+        location["tabId"] = tab_id
+    return {"insertText": {"location": location, "text": text}}
 
 
 def create_insert_text_segment_request(
-    index: int, text: str, segment_id: str
+    index: int, text: str, segment_id: str, tab_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Create an insertText request for Google Docs API with segmentId (for headers/footers).
@@ -208,34 +236,40 @@ def create_insert_text_segment_request(
         index: Position to insert text
         text: Text to insert
         segment_id: Segment ID (for targeting headers/footers)
+        tab_id: Optional ID of the tab to target
 
     Returns:
-        Dictionary representing the insertText request with segmentId
+        Dictionary representing the insertText request with segmentId and optional tabId
     """
+    location = {"segmentId": segment_id, "index": index}
+    if tab_id:
+        location["tabId"] = tab_id
     return {
         "insertText": {
-            "location": {"segmentId": segment_id, "index": index},
+            "location": location,
             "text": text,
         }
     }
 
 
-def create_delete_range_request(start_index: int, end_index: int) -> Dict[str, Any]:
+def create_delete_range_request(
+    start_index: int, end_index: int, tab_id: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Create a deleteContentRange request for Google Docs API.
 
     Args:
         start_index: Start position of content to delete
         end_index: End position of content to delete
+        tab_id: Optional ID of the tab to target
 
     Returns:
         Dictionary representing the deleteContentRange request
     """
-    return {
-        "deleteContentRange": {
-            "range": {"startIndex": start_index, "endIndex": end_index}
-        }
-    }
+    range_obj = {"startIndex": start_index, "endIndex": end_index}
+    if tab_id:
+        range_obj["tabId"] = tab_id
+    return {"deleteContentRange": {"range": range_obj}}
 
 
 def create_format_text_request(
@@ -249,6 +283,7 @@ def create_format_text_request(
     text_color: str = None,
     background_color: str = None,
     link_url: str = None,
+    tab_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Create an updateTextStyle request for Google Docs API.
@@ -264,6 +299,7 @@ def create_format_text_request(
         text_color: Text color as hex string "#RRGGBB"
         background_color: Background (highlight) color as hex string "#RRGGBB"
         link_url: Hyperlink URL (http/https)
+        tab_id: Optional ID of the tab to target
 
     Returns:
         Dictionary representing the updateTextStyle request, or None if no styles provided
@@ -282,9 +318,13 @@ def create_format_text_request(
     if not text_style:
         return None
 
+    range_obj = {"startIndex": start_index, "endIndex": end_index}
+    if tab_id:
+        range_obj["tabId"] = tab_id
+
     return {
         "updateTextStyle": {
-            "range": {"startIndex": start_index, "endIndex": end_index},
+            "range": range_obj,
             "textStyle": text_style,
             "fields": ",".join(fields),
         }
@@ -302,6 +342,8 @@ def create_update_paragraph_style_request(
     indent_end: float = None,
     space_above: float = None,
     space_below: float = None,
+    tab_id: Optional[str] = None,
+    named_style_type: str = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Create an updateParagraphStyle request for Google Docs API.
@@ -317,6 +359,8 @@ def create_update_paragraph_style_request(
         indent_end: Right/end indent in points
         space_above: Space above paragraph in points
         space_below: Space below paragraph in points
+        tab_id: Optional ID of the tab to target
+        named_style_type: Direct named style (TITLE, SUBTITLE, HEADING_1..6, NORMAL_TEXT)
 
     Returns:
         Dictionary representing the updateParagraphStyle request, or None if no styles provided
@@ -330,14 +374,19 @@ def create_update_paragraph_style_request(
         indent_end,
         space_above,
         space_below,
+        named_style_type,
     )
 
     if not paragraph_style:
         return None
 
+    range_obj = {"startIndex": start_index, "endIndex": end_index}
+    if tab_id:
+        range_obj["tabId"] = tab_id
+
     return {
         "updateParagraphStyle": {
-            "range": {"startIndex": start_index, "endIndex": end_index},
+            "range": range_obj,
             "paragraphStyle": paragraph_style,
             "fields": ",".join(fields),
         }
@@ -345,7 +394,10 @@ def create_update_paragraph_style_request(
 
 
 def create_find_replace_request(
-    find_text: str, replace_text: str, match_case: bool = False
+    find_text: str,
+    replace_text: str,
+    match_case: bool = False,
+    tab_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create a replaceAllText request for Google Docs API.
@@ -354,19 +406,25 @@ def create_find_replace_request(
         find_text: Text to find
         replace_text: Text to replace with
         match_case: Whether to match case exactly
+        tab_id: Optional ID of the tab to target
 
     Returns:
         Dictionary representing the replaceAllText request
     """
-    return {
+    request = {
         "replaceAllText": {
             "containsText": {"text": find_text, "matchCase": match_case},
             "replaceText": replace_text,
         }
     }
+    if tab_id:
+        request["replaceAllText"]["tabsCriteria"] = {"tabIds": [tab_id]}
+    return request
 
 
-def create_insert_table_request(index: int, rows: int, columns: int) -> Dict[str, Any]:
+def create_insert_table_request(
+    index: int, rows: int, columns: int, tab_id: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Create an insertTable request for Google Docs API.
 
@@ -374,30 +432,104 @@ def create_insert_table_request(index: int, rows: int, columns: int) -> Dict[str
         index: Position to insert table
         rows: Number of rows
         columns: Number of columns
+        tab_id: Optional ID of the tab to target
 
     Returns:
         Dictionary representing the insertTable request
     """
-    return {
-        "insertTable": {"location": {"index": index}, "rows": rows, "columns": columns}
-    }
+    location = {"index": index}
+    if tab_id:
+        location["tabId"] = tab_id
+    return {"insertTable": {"location": location, "rows": rows, "columns": columns}}
 
 
-def create_insert_page_break_request(index: int) -> Dict[str, Any]:
+def create_insert_page_break_request(
+    index: int, tab_id: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Create an insertPageBreak request for Google Docs API.
 
     Args:
         index: Position to insert page break
+        tab_id: Optional ID of the tab to target
 
     Returns:
         Dictionary representing the insertPageBreak request
     """
-    return {"insertPageBreak": {"location": {"index": index}}}
+    location = {"index": index}
+    if tab_id:
+        location["tabId"] = tab_id
+    return {"insertPageBreak": {"location": location}}
+
+
+def create_insert_doc_tab_request(
+    title: str, index: int, parent_tab_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Create an addDocumentTab request for Google Docs API.
+
+    Args:
+        title: Title of the new tab
+        index: Position to insert the tab
+        parent_tab_id: Optional ID of the parent tab to nest under
+
+    Returns:
+        Dictionary representing the addDocumentTab request
+    """
+    tab_properties: Dict[str, Any] = {
+        "title": title,
+        "index": index,
+    }
+    if parent_tab_id:
+        tab_properties["parentTabId"] = parent_tab_id
+    return {
+        "addDocumentTab": {
+            "tabProperties": tab_properties,
+        }
+    }
+
+
+def create_delete_doc_tab_request(tab_id: str) -> Dict[str, Any]:
+    """
+    Create a deleteDocumentTab request for Google Docs API.
+
+    Args:
+        tab_id: ID of the tab to delete
+
+    Returns:
+        Dictionary representing the deleteDocumentTab request
+    """
+    return {"deleteTab": {"tabId": tab_id}}
+
+
+def create_update_doc_tab_request(tab_id: str, title: str) -> Dict[str, Any]:
+    """
+    Create an updateDocumentTab request for Google Docs API.
+
+    Args:
+        tab_id: ID of the tab to update
+        title: New title for the tab
+
+    Returns:
+        Dictionary representing the updateDocumentTab request
+    """
+    return {
+        "updateDocumentTabProperties": {
+            "tabProperties": {
+                "tabId": tab_id,
+                "title": title,
+            },
+            "fields": "title",
+        }
+    }
 
 
 def create_insert_image_request(
-    index: int, image_uri: str, width: int = None, height: int = None
+    index: int,
+    image_uri: str,
+    width: int = None,
+    height: int = None,
+    tab_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create an insertInlineImage request for Google Docs API.
@@ -407,11 +539,16 @@ def create_insert_image_request(
         image_uri: URI of the image (Drive URL or public URL)
         width: Image width in points
         height: Image height in points
+        tab_id: Optional ID of the tab to target
 
     Returns:
         Dictionary representing the insertInlineImage request
     """
-    request = {"insertInlineImage": {"location": {"index": index}, "uri": image_uri}}
+    location = {"index": index}
+    if tab_id:
+        location["tabId"] = tab_id
+
+    request = {"insertInlineImage": {"location": location, "uri": image_uri}}
 
     # Add size properties if specified
     object_size = {}
@@ -432,6 +569,7 @@ def create_bullet_list_request(
     list_type: str = "UNORDERED",
     nesting_level: int = None,
     paragraph_start_indices: Optional[list[int]] = None,
+    doc_tab_id: Optional[str] = None,
 ) -> list[Dict[str, Any]]:
     """
     Create requests to apply bullet list formatting with optional nesting.
@@ -448,6 +586,7 @@ def create_bullet_list_request(
         nesting_level: Nesting level (0-8, where 0 is top level). If None or 0, no tabs added.
         paragraph_start_indices: Optional paragraph start positions for ranges with
             multiple paragraphs. If omitted, only start_index is tab-prefixed.
+        doc_tab_id: Optional ID of the tab to target
 
     Returns:
         List of request dictionaries (insertText for nesting tabs if needed,
@@ -485,12 +624,7 @@ def create_bullet_list_request(
         for paragraph_start in paragraph_starts:
             adjusted_start = paragraph_start + inserted_char_count
             requests.append(
-                {
-                    "insertText": {
-                        "location": {"index": adjusted_start},
-                        "text": tabs,
-                    }
-                }
+                create_insert_text_request(adjusted_start, tabs, doc_tab_id)
             )
             inserted_char_count += nesting_level
 
@@ -503,16 +637,47 @@ def create_bullet_list_request(
         )
 
     # Create the bullet list
+    range_obj = {"startIndex": start_index, "endIndex": end_index}
+    if doc_tab_id:
+        range_obj["tabId"] = doc_tab_id
+
     requests.append(
         {
             "createParagraphBullets": {
-                "range": {"startIndex": start_index, "endIndex": end_index},
+                "range": range_obj,
                 "bulletPreset": bullet_preset,
             }
         }
     )
 
     return requests
+
+
+def create_delete_bullet_list_request(
+    start_index: int,
+    end_index: int,
+    doc_tab_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Create a deleteParagraphBullets request to remove bullet/list formatting.
+
+    Args:
+        start_index: Start of the paragraph range
+        end_index: End of the paragraph range
+        doc_tab_id: Optional ID of the tab to target
+
+    Returns:
+        Dictionary representing the deleteParagraphBullets request
+    """
+    range_obj = {"startIndex": start_index, "endIndex": end_index}
+    if doc_tab_id:
+        range_obj["tabId"] = doc_tab_id
+
+    return {
+        "deleteParagraphBullets": {
+            "range": range_obj,
+        }
+    }
 
 
 def validate_operation(operation: Dict[str, Any]) -> tuple[bool, str]:
@@ -539,6 +704,10 @@ def validate_operation(operation: Dict[str, Any]) -> tuple[bool, str]:
         "insert_table": ["index", "rows", "columns"],
         "insert_page_break": ["index"],
         "find_replace": ["find_text", "replace_text"],
+        "create_bullet_list": ["start_index", "end_index"],
+        "insert_doc_tab": ["title", "index"],
+        "delete_doc_tab": ["tab_id"],
+        "update_doc_tab": ["tab_id", "title"],
     }
 
     if op_type not in required_fields:
